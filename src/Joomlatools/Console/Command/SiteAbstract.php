@@ -54,7 +54,13 @@ abstract class SiteAbstract extends Command
         $this->target_db  = 'sites_'.$this->site;
         $this->target_dir = $this->www.'/'.$this->site;
 
+        if (strpos($input->getOption('mysql', '@')) 
+        {
+            $dbstring = explode('@',$mysql,2);
+            $credentials = explode(':', $dbstring[0], 2);    
+            $hostport = $dbstring[1];
+        }
         $credentials = explode(':', $input->getOption('mysql'), 2);
-        $this->mysql = (object) array('user' => $credentials[0], 'password' => $credentials[1]);
+        $this->mysql = (object) array('user' => $credentials[0], 'password' => $credentials[1], 'hostport' => $hostport);
     }
 }
