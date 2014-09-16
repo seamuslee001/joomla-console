@@ -70,23 +70,23 @@ abstract class UserAbstract extends Command
         
         $this->app = Bootstrapper::getApplication($this->target_dir);
 
-        $name = $input->getOption('name');
-        $user = $input->getOption('user');
-        $email = $input->getOption('email');
-        $pass = $input->getOption('pass');
-
-        if (empty($this->userParams->pass)) 
+        if (!$input->hasOption('pass')) 
         {
             require_once JPATH_BASE.'/libraries/joomla/user/helper.php';
             $pass = \JUserHelper::genRandomPassword(14);
-        }
+        } else $pass = $input->getOption('pass');
 
-        $groupname = $input->getOption('group');
         $this->groups = $this->getGroups();
 
-        $group = $this->groups[$groupname];
+        $group = $this->groups[$input->getOption('group')];
 
-        $this->userParams = (object) array('name'=>$name,'user'=>$user,'pass'=>$pass,'email'=>$email,'group'=>$group->id);
+        $this->userParams = (object) array(
+            'name'=>$input->getOption('name'),
+            'user'=>$input->getOption('user'),
+            'pass'=>$pass,
+            'email'=>$input->getOption('email'),
+            'group'=>$group->id
+        );
         
     }
 

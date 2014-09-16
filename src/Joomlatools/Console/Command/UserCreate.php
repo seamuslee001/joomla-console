@@ -29,7 +29,7 @@ class UserCreate extends UserAbstract
     {
         parent::execute($input, $output);
         
-        $this->createUser($this->userParams);
+        $this->createUser($this->userParams, $output);
         
     }
 
@@ -43,41 +43,35 @@ class UserCreate extends UserAbstract
    *
    * @access public
    */
-  public function createUser(&$params) {
+  public function createUser(&$params, $output) {
 
-    $baseDir = JPATH_BASE;
-    require_once $baseDir . '/components/com_users/models/registration.php';
+    require_once JPATH_BASE.'/libraries/joomla/user/helper.php';
+    require_once JPATH_BASE.'/libraries/joomla/user/user.php';
+    require_once JPATH_BASE.'/libraries/cms/component/helper.php';
 
-    $userParams = \JComponentHelper::getParams('com_users');
-    $model      = new \UsersModelRegistration();
+    $salt = \JUserHelper::genRandomPassword(32);
+    $password_clear = $params->pass;
+    $crypted  = \JUserHelper::getCryptedPassword($password_clear, $salt);
+    $password = $crypted.':'.$salt;
+    $instance = \JUser::getInstance();
 
-    // check for a specified usertype, else get the default usertype
-    if (isset($params->group)) $userType = $params->group;
-    else {
-      $userType = $userParams->get('new_usertype');
-      if (!$userType) {
-        $userType = 2;
-      }
+    $instance->set('id',0);
+    $instance->set('name',$params->name);
+    $instance->set('username',$params->user);
+    $instance->set('password', $password);
+    $instance->set('password_clear',$password_clear);
+    $instance->set('email',$params->email);
+    $instance->set('groups', array($params->group));
+    $instance->set('block',0);
+
+    if (!$instance->save())
+    {
+        // Return exception for instance
+    } 
+    else 
+    {
+        $output->writeln("Your Joomla user has been created. You can login using the credentials $params->user / $password_clear");
     }
-
-    $fullname = trim($params->name);
-
-    // Prepare the values for a new Joomla user.
-    $values              = array();
-    $values['name']      = $fullname;
-    $values['username']  = trim($params->user);
-    $values['password1'] = $values['password2'] = $params->pass;
-    $values['email1']    = $values['email2'] = trim($params->email);
-    $values['groups']    = array($userType);
-    $values['block']     = 0;
-
-    // $lang = $this->app->getLanguage();;
-    // $lang->load('com_users', $baseDir);
-
-    $register = $model->register($values);
-
-    $uid = \JUserHelper::getUserId($values['username']);
-    return $uid;
   }
     
 
