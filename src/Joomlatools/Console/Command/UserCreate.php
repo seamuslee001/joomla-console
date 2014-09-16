@@ -69,6 +69,7 @@ class UserCreate extends UserAbstract
     $values['password1'] = $values['password2'] = $params->pass;
     $values['email1']    = $values['email2'] = trim($params->email);
     $values['groups']    = array($userType);
+    $values['block']     = 0;
 
     // $lang = $this->app->getLanguage();;
     // $lang->load('com_users', $baseDir);
