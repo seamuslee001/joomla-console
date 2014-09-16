@@ -75,7 +75,7 @@ abstract class UserAbstract extends Command
         $email = $input->getOption('email');
         $pass = $input->getOption('pass');
 
-        if (empty($this->userParams->pass)) 
+        if (empty($pass))
         {
             require_once JPATH_BASE.'/libraries/joomla/user/helper.php';
             $pass = \JUserHelper::genRandomPassword(14);

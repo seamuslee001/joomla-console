@@ -30,7 +30,6 @@ class UserCreate extends UserAbstract
         parent::execute($input, $output);
         
         $this->createUser($this->userParams);
-        
     }
 
  /**
@@ -45,11 +44,7 @@ class UserCreate extends UserAbstract
    */
   public function createUser(&$params) {
 
-    $baseDir = JPATH_BASE;
-    require_once $baseDir . '/components/com_users/models/registration.php';
-
     $userParams = \JComponentHelper::getParams('com_users');
-    $model      = new \UsersModelRegistration();
 
     // check for a specified usertype, else get the default usertype
     if (isset($params->group)) $userType = $params->group;
@@ -60,24 +55,34 @@ class UserCreate extends UserAbstract
       }
     }
 
-    $fullname = trim($params->name);
+    // Prepare the data for the user object.
+    $data = array();
+    $data['name']      = trim($params->name);
+    $data['username']  = trim($params->user);
+    $data['password1'] = $data['password2'] = $params->pass;
+    $data['email1']    = $data['email2'] = trim($params->email);
+    $data['groups']    = array($userType);
+    $data['block']     = 0;
+    $data['email'] = \JStringPunycode::emailToPunycode($data['email1']);
+    $data['password']  = $data['password1'];
+    $data['activation'] = \JApplication::getHash(\JUserHelper::genRandomPassword());
 
-    // Prepare the values for a new Joomla user.
-    $values              = array();
-    $values['name']      = $fullname;
-    $values['username']  = trim($params->user);
-    $values['password1'] = $values['password2'] = $params->pass;
-    $values['email1']    = $values['email2'] = trim($params->email);
-    $values['groups']    = array($userType);
-    $values['block']     = 0;
+    // Initialise the table with JUser; bind the data.
+    $user = new \JUser;
+    if (!$user->bind($data))
+    {
+      echo \JText::sprintf('COM_USERS_REGISTRATION_BIND_FAILED', $user->getError()); // FIXME $output
+      return false;
+    }
 
-    // $lang = $this->app->getLanguage();;
-    // $lang->load('com_users', $baseDir);
+    // Store the data.
+    if (!$user->save())
+    {
+      echo $user->getError(); // FIXME $output
+      return false;
+    }
 
-    $register = $model->register($values);
-
-    $uid = \JUserHelper::getUserId($values['username']);
-    return $uid;
+    return $user->id;
   }
     
 
