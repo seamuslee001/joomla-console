@@ -185,6 +185,7 @@ class SiteCreate extends SiteAbstract
             $this->symlinkProjects($input, $output);
             $this->installExtensions($input, $output);
             $this->enableWebInstaller($input, $output);
+            // $this->createUser($input, $output);
         }
         else
         {
@@ -194,7 +195,7 @@ class SiteCreate extends SiteAbstract
         if ($this->version)
         {
             $output->writeln("Your new Joomla site has been created.");
-            $output->writeln("You can login using the following username and password combination: <info>admin</info>/<info>admin</info>.");
+            if (!$this->nousers) $output->writeln("You can login using the following username and password combination: <info></info>/<info>admin</info>.");
         }
     }
 
@@ -300,12 +301,15 @@ class SiteCreate extends SiteAbstract
 
         $imports = array($this->target_dir.'/installation/sql/mysql/joomla.sql');
 
-        $users = 'joomla3.users.sql';
-        if(is_numeric(substr($this->version, 0, 1)) && version_compare($this->version, '3.0.0', '<')) {
-            $users = 'joomla2.users.sql';
-        }
+        if (!$this->nousers) {
 
-        $imports[] = self::$files.'/'.$users;
+            $users = 'joomla3.users.sql';
+            if(is_numeric(substr($this->version, 0, 1)) && version_compare($this->version, '3.0.0', '<')) {
+                $users = 'joomla2.users.sql';
+            }
+
+            $imports[] = self::$files.'/'.$users;
+        }
 
         if ($this->sample_data)
         {
@@ -505,11 +509,34 @@ class SiteCreate extends SiteAbstract
         `mkdir -p $this->target_dir/plugins/installer`;
         `cd $this->target_dir/plugins/installer/ && unzip -o $filename`;
 
-        $sql = "INSERT INTO `{$this->dbprefix}_extensions` (`name`, `type`, `element`, `folder`, `enabled`, `access`, `manifest_cache`) VALUES ('plg_installer_webinstaller', 'plugin', 'webinstaller', 'installer', 1, 1, '{\"name\":\"plg_installer_webinstaller\",\"type\":\"plugin\",\"version\":\"".$xml->update->version."\",\"description\":\"Web Installer\"}');";
+        $sql = sprintf("INSERT INTO `%s_extensions` (`name`, `type`, `element`, `folder`, `enabled`, `access`, `manifest_cache`) VALUES ('plg_installer_webinstaller', 'plugin', 'webinstaller', 'installer', 1, 1, '{\"name\":\"plg_installer_webinstaller\",\"type\":\"plugin\",\"version\":\"%s\",\"description\":\"Web Installer\"}');", $this->dbprefix, $xml->update->version);
         $sql = escapeshellarg($sql);
 
         $password = empty($this->mysql->password) ? '' : sprintf("-p'%s'", $this->mysql->password);
         exec(sprintf("mysql -u'%s' %s %s -e %s", $this->mysql->user, $password, $this->target_db, $sql));
+    }
+
+    public function createUser(InputInterface $input, OutputInterface $output)
+    {
+       $this->name = $input->getOption('name');
+       $this->user = $input->getOption('user');
+       $this->pass = $input->getOption('pass');
+       $this->email = $input->getOption('email');
+       $this->group = $input->getOption('group');
+
+       $user_input = new ArrayInput(array(
+            'user:create',
+            '--base'=> $this->www.'/'.$this->site,
+            '--name'=>$input->getOption('name'),
+            '--user'=>$input->getOption('user'),
+            '--pass'=>$input->getOption('pass'),
+            '--email'=>$input->getOption('email'),
+            '--group'=>$input->getOption('group')        ));
+
+        $userCreator = new UserCreate();
+
+        $userCreator->run($user_input, $output);
+
     }
 
     public function setVersion($version)

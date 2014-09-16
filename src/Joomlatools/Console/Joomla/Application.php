@@ -458,5 +458,11 @@ class Application extends JApplicationCli
 		 */
     	throw new \RuntimeException(sprintf('Application tried to redirect to %s', $url));
     }
+
+    public function getDbo()
+    {
+        return \JFactory::getDbo();
+    }
+
     
 }

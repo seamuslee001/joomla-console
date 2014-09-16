@@ -32,6 +32,13 @@ abstract class SiteAbstract extends Command
             InputArgument::REQUIRED,
             'Alphanumeric site name. Also used in the site URL with .dev domain'
         )->addOption(
+            'nousers',
+            null,
+            InputOption::VALUE_OPTIONAL,
+            'Build the joomla instance without adding default users',
+            true
+        )
+        ->addOption(
             'www',
             null,
             InputOption::VALUE_REQUIRED,
@@ -59,6 +66,12 @@ abstract class SiteAbstract extends Command
 //            'Prefix for the Joomla database tables',
 //            'j'
 //        )
+        ->addOption(
+            'title',
+            null,
+            InputOption::VALUE_OPTIONAL,
+            "Title for the site"
+        )
         ;
     }
 
@@ -70,6 +83,8 @@ abstract class SiteAbstract extends Command
         $this->target_db  = $input->getOption('dbname') ? $input->getOption('dbname') : 'sites_'.$this->site;
         $this->target_dir = $this->www.'/'.$this->site;
         $this->dbprefix   = 'j'; // $input->getOption('dbprefix');
+
+        $this->nousers = $input->getOption('nousers');
 
         if (strpos($input->getOption('mysql'), '@') !== false)
         {
