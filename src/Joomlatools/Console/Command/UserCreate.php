@@ -65,7 +65,7 @@ class UserCreate extends UserAbstract
     // Prepare the values for a new Joomla user.
     $values              = array();
     $values['name']      = $fullname;
-    $values['username']  = trim($params->name);
+    $values['username']  = trim($params->user);
     $values['password1'] = $values['password2'] = $params->pass;
     $values['email1']    = $values['email2'] = trim($params->email);
     $values['groups']    = array($userType);
