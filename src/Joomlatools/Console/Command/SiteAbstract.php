@@ -30,6 +30,13 @@ abstract class SiteAbstract extends Command
             InputArgument::REQUIRED,
             'Alphanumeric site name. Also used in the site URL with .dev domain'
         )->addOption(
+            'nousers',
+            null,
+            InputOption::VALUE_OPTIONAL,
+            'Build the joomla instance without adding default users',
+            true
+        )
+        ->addOption(
             'www',
             null,
             InputOption::VALUE_REQUIRED,
@@ -40,10 +47,16 @@ abstract class SiteAbstract extends Command
             'mysql',
             null,
             InputOption::VALUE_REQUIRED,
-            "MySQL credentials in the form of user:password",
-            'root:root'
+            "MySQL credentials in the form of user:password@host:port",
+            'root:root@localhost:3306'
         )
-        ;
+        ->addOption(
+            'title',
+            null,
+            InputOption::VALUE_OPTIONAL,
+            "Title for the site"
+        );
+        
     }
 
     protected function execute(InputInterface $input, OutputInterface $output)
@@ -52,15 +65,16 @@ abstract class SiteAbstract extends Command
         $this->www        = $input->getOption('www');
 
         $this->target_db  = 'sites_'.$this->site;
-        $this->target_dir = $this->www.'/'.$this->site;
+        $this->target_dir = $this->www;
 
-        if (strpos($input->getOption('mysql', '@')) 
+        if (strpos($input->getOption('mysql'), '@') !== false) 
         {
-            $dbstring = explode('@',$mysql,2);
+            $dbstring = explode('@',$input->getOption('mysql'),2);
             $credentials = explode(':', $dbstring[0], 2);    
-            $hostport = $dbstring[1];
+            $hostport = explode(':', $dbstring[1],2);
         }
-        $credentials = explode(':', $input->getOption('mysql'), 2);
-        $this->mysql = (object) array('user' => $credentials[0], 'password' => $credentials[1], 'hostport' => $hostport);
+        else $credentials = explode(':', $input->getOption('mysql'), 2);
+        $this->mysql = (object) array('user' => $credentials[0], 'password' => $credentials[1], 'host' => $hostport[0]);
+        $this->mysql->port = (count($hostport) > 1) ? $hostport[1] : 3306;
     }
 }

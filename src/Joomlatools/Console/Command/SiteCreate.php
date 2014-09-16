@@ -68,6 +68,7 @@ class SiteCreate extends SiteAbstract
      */
     protected $versions;
 
+
     /**
      *
      */
@@ -115,12 +116,30 @@ class SiteCreate extends SiteAbstract
                 'Directory where your custom projects reside',
                 sprintf('%s/Projects', trim(`echo ~`))
             )
+            ->addOption(
+                'dbname',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'User specified database where joomla will be installed',
+                $this->target_db
+            )
+            ->addOption(
+                'dbprefix',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'User specified prefix for the Joomla database tables',
+                'j'
+            )
             ;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output)
     {
         parent::execute($input, $output);
+
+        $this->dbname = $input->getOption('dbname');
+        $this->dbprefix = $input->getOption('dbprefix');
+        $this->nousers = $input->getOption('nousers');
 
         $this->versions = new Versions();
 
@@ -139,6 +158,7 @@ class SiteCreate extends SiteAbstract
 
         $this->source_db = $this->target_dir.'/installation/sql/mysql/joomla.sql';
 
+
         $this->check($input, $output);
         $this->createFolder($input, $output);
         $this->createDatabase($input, $output);
@@ -147,32 +167,38 @@ class SiteCreate extends SiteAbstract
         $this->symlinkProjects($input, $output);
         $this->installExtensions($input, $output);
         $this->enableWebInstaller($input, $output);
+        // $this->createUser($input, $output);
 
         if ($this->version)
         {
             $output->writeln("Your new Joomla site has been created.");
-            $output->writeln("You can login using the following username and password combination: <info>admin</info>/<info>admin</info>.");
+            if (!$this->nousers) $output->writeln("You can login using the following username and password combination: <info></info>/<info>admin</info>.");
         }
     }
 
     public function check(InputInterface $input, OutputInterface $output)
     {
-        if (file_exists($this->target_dir)) {
+
+        if (file_exists($this->target_dir.'/configuration.php')) {
             throw new \RuntimeException(sprintf('A site with name %s already exists', $this->site));
         }
 
         if ($this->version)
         {
-            $password = empty($this->mysql->password) ? '' : sprintf("-p'%s'", $this->mysql->password);
+            $password = empty($this->mysql->password) ? '' : sprintf("-p%s", $this->mysql->password);
+            $host = empty($this->mysql->host) ? '' : sprintf("-h%s", $this->mysql->host);
+            $port = empty($this->mysql->port) ? '' : sprintf("-P%d", $this->mysql->port);
+            if (!empty($this->dbname)) $this->target_db = $this->dbname;
             $result = exec(sprintf(
-                    "echo 'SHOW DATABASES LIKE \"%s\"' | mysql -u'%s' %s",
-                    $this->target_db, $this->mysql->user, $password
+                    "echo 'SHOW DATABASES LIKE \"%s\"' | mysql -u%s %s %s %s",
+                    $this->target_db, $this->mysql->user, $password, $host, $port
                 )
             );
 
-            if (!empty($result)) { // Table exists
+            if (!empty($result) && empty($this->dbname)) { // Database exists
                 throw new \RuntimeException(sprintf('A database with name %s already exists', $this->target_db));
             }
+
 
             $this->source_tarball = $this->getTarball($this->version, $output);
             if(!file_exists($this->source_tarball)) {
@@ -216,25 +242,30 @@ class SiteCreate extends SiteAbstract
         }
 
         $password = empty($this->mysql->password) ? '' : sprintf("-p'%s'", $this->mysql->password);
+        $this->target_db = empty($this->dbname) ?: $this->dbname;
         $result = exec(
             sprintf(
-                "echo 'CREATE DATABASE %s CHARACTER SET utf8' | mysql -u'%s' %s",
-                $this->target_db, $this->mysql->user, $password
+                "echo 'CREATE DATABASE %s CHARACTER SET utf8' | mysql -u'%s' %s %s %s",
+                $this->target_db, $this->mysql->user, $password, $this->mysql->host, $this->mysql->port
             )
         );
 
-        if (!empty($result)) { // MySQL returned an error
+        if (!empty($result) && empty($this->dbname)) { // MySQL returned an error
             throw new \RuntimeException(sprintf('Cannot create database %s. Error: %s', $this->target_db, $result));
         }
 
         $imports = array($this->target_dir.'/installation/sql/mysql/joomla.sql');
 
-        $users = 'joomla3.users.sql';
-        if(is_numeric(substr($this->version, 0, 1)) && version_compare($this->version, '3.0.0', '<')) {
-            $users = 'joomla2.users.sql';
-        }
+        if (!$this->nousers) {
+
+            $users = 'joomla3.users.sql';
+            if(is_numeric(substr($this->version, 0, 1)) && version_compare($this->version, '3.0.0', '<')) {
+                $users = 'joomla2.users.sql';
+            }
+        
 
         $imports[] = self::$files.'/'.$users;
+        }
 
         if ($this->sample_data)
         {
@@ -247,11 +278,11 @@ class SiteCreate extends SiteAbstract
         foreach($imports as $import)
         {
             $contents = file_get_contents($import);
-            $contents = str_replace('#__', 'j_', $contents);
+            $contents = str_replace('#__', $this->dbprefix.'_', $contents);
             file_put_contents($import, $contents);
 
             $password = empty($this->mysql->password) ? '' : sprintf("-p'%s'", $this->mysql->password);
-            $result = exec(sprintf("mysql -u'%s' %s %s < %s", $this->mysql->user, $password, $this->target_db, $import));
+            $result = exec(sprintf("mysql -u'%s' %s %s < %s", $this->mysql->user, $password, $this->dbname, $import));
 
             if (!empty($result)) { // MySQL returned an error
                 throw new \RuntimeException(sprintf('Cannot import database "%s". Error: %s', basename($import), $result));
@@ -302,7 +333,7 @@ class SiteCreate extends SiteAbstract
             'db'        => $this->target_db,
             'user'      => $this->mysql->user,
             'password'  => $this->mysql->password,
-            'dbprefix'  => 'j_',
+            'dbprefix'  => $this->dbprefix.'_',
             'dbtype'    => 'mysqli',
 
             'mailer' => 'smtp',
@@ -436,11 +467,34 @@ class SiteCreate extends SiteAbstract
         `mkdir -p $this->target_dir/plugins/installer`;
         `cd $this->target_dir/plugins/installer/ && unzip -o $filename`;
 
-        $sql = "INSERT INTO `j_extensions` (`name`, `type`, `element`, `folder`, `enabled`, `access`, `manifest_cache`) VALUES ('plg_installer_webinstaller', 'plugin', 'webinstaller', 'installer', 1, 1, '{\"name\":\"plg_installer_webinstaller\",\"type\":\"plugin\",\"version\":\"".$xml->update->version."\",\"description\":\"Web Installer\"}');";
+        $sql = sprintf("INSERT INTO `%s_extensions` (`name`, `type`, `element`, `folder`, `enabled`, `access`, `manifest_cache`) VALUES ('plg_installer_webinstaller', 'plugin', 'webinstaller', 'installer', 1, 1, '{\"name\":\"plg_installer_webinstaller\",\"type\":\"plugin\",\"version\":\"%s\",\"description\":\"Web Installer\"}');", $this->dbprefix, $xml->update->version);
         $sql = escapeshellarg($sql);
 
         $password = empty($this->mysql->password) ? '' : sprintf("-p'%s'", $this->mysql->password);
         exec(sprintf("mysql -u'%s' %s %s -e %s", $this->mysql->user, $password, $this->target_db, $sql));
+    }
+
+    public function createUser(InputInterface $input, OutputInterface $output)
+    {
+       $this->name = $input->getOption('name');
+       $this->user = $input->getOption('user');
+       $this->pass = $input->getOption('pass');
+       $this->email = $input->getOption('email');
+       $this->group = $input->getOption('group');
+
+       $user_input = new ArrayInput(array(
+            'user:create',
+            '--base'=> $this->www.'/'.$this->site,
+            '--name'=>$input->getOption('name'),
+            '--user'=>$input->getOption('user'),
+            '--pass'=>$input->getOption('pass'),
+            '--email'=>$input->getOption('email'),
+            '--group'=>$input->getOption('group')        ));
+
+        $userCreator = new UserCreate();
+
+        $userCreator->run($user_input, $output);
+
     }
 
     public function setVersion($version)
