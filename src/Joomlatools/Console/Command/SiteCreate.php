@@ -12,6 +12,8 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
+use Joomlatools\Console\Joomla\Bootstrapper;
+
 class SiteCreate extends SiteAbstract
 {
     /**
@@ -413,6 +415,24 @@ class SiteCreate extends SiteAbstract
 
         `mv $this->target_dir/installation $this->target_dir/_installation`;
         `cp $this->target_dir/htaccess.txt $this->target_dir/.htaccess`;
+
+        // Set com_users params - turn off user registration and email verification
+        $this->app = Bootstrapper::getApplication($this->target_dir);
+        require_once JPATH_BASE.'/libraries/cms/component/helper.php';
+        $comUserId = \JComponentHelper::getComponent('com_users')->id;
+        $userParams = \JComponentHelper::getParams('com_users');
+        $userParams->set('allowUserRegistration', 0);
+        $userParams->set('sendpassword',0);
+        $userParams->set('useractivation',0);
+        $table = \JTable::getInstance('extension');
+        $table->load($comUserId);
+        $table->bind(array('params' => $userParams->toString()));
+
+        // Save to database
+        if (!$table->store()) {
+            $this->setError('userParams: store: ' . $table->getError());
+            return false;
+        }
     }
 
     public function addVirtualHost(InputInterface $input, OutputInterface $output)
