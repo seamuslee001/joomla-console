@@ -30,7 +30,8 @@ abstract class SiteAbstract extends Command
         $this->addArgument(
             'site',
             InputArgument::REQUIRED,
-            'Alphanumeric site name. Also used in the site URL with .dev domain'
+            'Alphanumeric site name. Also used in the site URL with .dev domain (Use "." for current directory)'
+            // TODO: Discuss using ".' as default
         )->addOption(
             'nousers',
             null,
@@ -77,8 +78,15 @@ abstract class SiteAbstract extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $this->site       = $input->getArgument('site');
-        $this->www        = $input->getOption('www');
+        if ($input->getArgument('site') === '.') {
+          $this->site       = basename(getcwd());
+          $this->www        = dirname(getcwd());
+        }
+        else {
+          $this->site       = $input->getArgument('site');
+          $this->www        = $input->getOption('www');
+
+        }
 
         $this->target_db  = $input->getOption('dbname') ? $input->getOption('dbname') : 'sites_'.$this->site;
         $this->target_dir = $this->www.'/'.$this->site;

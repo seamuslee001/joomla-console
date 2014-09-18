@@ -203,7 +203,7 @@ class SiteCreate extends SiteAbstract
 
     public function check(InputInterface $input, OutputInterface $output)
     {
-        if ($this->is_download_enabled && file_exists($this->target_dir)) {
+        if ($this->is_download_enabled && file_exists($this->target_dir) && !$this->checkEmptyDir($this->target_dir)) {
             throw new \RuntimeException(sprintf('A site with name %s already exists', $this->site));
         }
 
@@ -266,6 +266,14 @@ class SiteCreate extends SiteAbstract
             sprintf('CONNECT %s; SHOW TABLES LIKE "%s"', $db_name, $db_prefix . '%')
         );
         return !empty($result);
+    }
+
+    public function checkEmptyDir($target_dir) {
+        if (!file_exists($target_dir) || !is_dir($target_dir)) {
+            return false;
+        }
+        $files = (array) glob("$target_dir/*");
+        return empty($files);
     }
 
     public function createFolder(InputInterface $input, OutputInterface $output)
