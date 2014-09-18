@@ -1,15 +1,15 @@
 {
-    "name": "jsproffitt/joomla-console",
+    "name": "joomlatools/joomla-console",
     "type": "project",
     "license": "MPLv2",
-    "description": "A fork of the Joomlatools joomla-command with modifications for working with CiviCRM. This command-line script helps to ease the management of Joomla sites in your development environment.",
+    "description": "This command-line script helps to ease the management of Joomla sites in your development environment.",
     "keywords": ["joomla", "console", "tools"],
-    "homepage": "https://github.com/jsproffitt/joomla-console",
+    "homepage": "https://github.com/joomlatools/joomla-console",
     "authors": [
         {
-            "name": "Jeremy Proffitt",
-            "email": "jproffitt@ezodesign.com",
-            "homepage": "https://www.ezodesign.com/"
+            "name": "Joomlatools",
+            "email": "info@joomlatools.com",
+            "homepage": "https://www.joomlatools.com"
         }
     ],
     "require": {
