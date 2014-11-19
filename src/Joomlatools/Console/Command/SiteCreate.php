@@ -384,6 +384,7 @@ class SiteCreate extends SiteAbstract
         $replacements = array(
             'db'        => $this->target_db,
             'user'      => $this->mysql->user,
+            'host'      => $this->mysql->host . (empty($this->mysql->port) ? '' : (':' . $this->mysql->port)),
             'password'  => $this->mysql->password,
             'dbprefix'  => $this->dbprefix . '_',
             'dbtype'    => 'mysqli',
