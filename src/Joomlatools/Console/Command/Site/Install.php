@@ -76,7 +76,18 @@ class Install extends Database\AbstractDatabase
                 InputOption::VALUE_NONE,
                 'Do not check if database already exists or not.'
             )
-            ;
+            ->addOption(
+                'skip-create-statement',
+                null,
+                InputOption::VALUE_NONE,
+                'Do not run the "CREATE IF NOT EXISTS <db>" query. Use this if the user does not have CREATE privileges on the database.'
+            )
+            ->addOption(
+                'options',
+                null,
+                InputOption::VALUE_REQUIRED,
+                "A YAML file consisting of serialized parameters to override JConfig."
+            );
     }
 
     protected function execute(InputInterface $input, OutputInterface $output)
@@ -125,7 +136,7 @@ class Install extends Database\AbstractDatabase
             '--www'  => $this->www
         );
 
-        $optionalArgs = array('sample-data', 'drop', 'mysql-login', 'mysql_db_prefix', 'mysql-host', 'mysql-port', 'mysql-database', 'skip-exists-check');
+        $optionalArgs = array('sample-data', 'drop', 'mysql-login', 'mysql_db_prefix', 'mysql-db-prefix', 'mysql-host', 'mysql-port', 'mysql-database', 'skip-exists-check', 'skip-create-statement', 'www', 'use-webroot-dir', 'skip-exists-check');
         foreach ($optionalArgs as $optionalArg)
         {
             $value = $input->getOption($optionalArg);
@@ -150,7 +161,7 @@ class Install extends Database\AbstractDatabase
             '--www'  => $this->www
         );
 
-        $optionalArgs = array('overwrite', 'mysql-login', 'mysql_db_prefix', 'mysql-host', 'mysql-port', 'mysql-database', 'mysql-driver', 'interactive');
+        $optionalArgs = array('overwrite', 'mysql-login', 'mysql_db_prefix', 'mysql-db-prefix', 'mysql-host', 'mysql-port', 'mysql-database', 'mysql-driver', 'interactive', 'options', 'www', 'use-webroot-dir');
         foreach ($optionalArgs as $optionalArg)
         {
             $value = $input->getOption($optionalArg);
@@ -199,7 +210,7 @@ class Install extends Database\AbstractDatabase
 
         $version = Util::getJoomlaVersion($this->target_dir);
 
-        if (version_compare($version, '3.2.0', '<')) {
+        if (version_compare($version->release, '3.2.0', '<')) {
             return;
         }
 
@@ -227,7 +238,7 @@ class Install extends Database\AbstractDatabase
             return;
         }
 
-        $filename = $this->getApplication()->getCachePath(basename($url));
+        $filename = Util::getWritablePath().'/cache/'.basename($url);
         if(!file_exists($filename))
         {
             $bytes = file_put_contents($filename, fopen($url, 'r'));

@@ -7,10 +7,10 @@
 
 namespace Joomlatools\Console\Command\Vhost;
 
+use Joomlatools\Console\Joomla\Util;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 class Remove extends Command
@@ -21,25 +21,44 @@ class Remove extends Command
 
         $this
             ->setName('vhost:remove')
-            ->setDescription('Removes an Apache2 virtual host')
+            ->setDescription('Removes the Apache2 and/or Nginx virtual host')
             ->addArgument(
                 'site',
                 InputArgument::REQUIRED,
-                'Alphanumeric site name, used in the site URL with .dev domain'
+                'Alphanumeric site name, used in the site URL with .test domain'
             )
         ;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $site = $input->getArgument('site');
-        $file = '/etc/apache2/sites-available/1-' . $site . '.conf';
+        $site    = $input->getArgument('site');
+        $restart = [];
+        $file    = '/etc/apache2/sites-available/1-' . $site . '.conf';
 
         if (is_file($file))
         {
             `sudo a2dissite 1-$site.conf`;
             `sudo rm $file`;
-            `sudo /etc/init.d/apache2 restart > /dev/null 2>&1`;
+
+            $restart[] = 'apache';
+        }
+
+        $file = '/etc/nginx/sites-available/1-' . $site . '.conf';
+
+        if (is_file($file))
+        {
+            `sudo rm -f $file`;
+            `sudo rm -f /etc/nginx/sites-enabled/1-$site.conf`;
+
+            $restart[] = 'nginx';
+        }
+
+        if (Util::isJoomlatoolsBox() && $restart)
+        {
+            $arguments = implode(' ', $restart);
+
+            `box server:restart $arguments`;
         }
     }
 }

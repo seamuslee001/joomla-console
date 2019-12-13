@@ -8,23 +8,33 @@
 namespace Joomlatools\Console\Command;
 
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 use Symfony\Component\Console\Helper\TableHelper;
+use Joomlatools\Console\Joomla\Util;
 
 class Versions extends Command
 {
+    const REPO_JOOMLATOOLS_PLATFORM = 'https://github.com/joomlatools/joomlatools-platform';
+    const REPO_JOOMLA_CMS           = 'https://github.com/joomla/joomla-cms';
+    const REPO_KODEKIT_PLATFORM     = 'https://github.com/timble/kodekit-platform.git';
+
     /**
      * Git repository to use
      *
      * @var string
      */
-    protected $repository = 'https://github.com/joomla/joomla-cms.git';
+    protected $repository = self::REPO_JOOMLA_CMS;
 
     protected function configure()
     {
+        if (!self::$file) {
+            self::$file = Util::getWritablePath() . '/cache/' . md5($this->repository) . '/.versions';
+        }
+
         $this
             ->setName('versions')
             ->setDescription('Show available versions in Joomla Git repository')
@@ -44,7 +54,7 @@ class Versions extends Command
                 'repo',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'Alternative Git repository to clone. To use joomlatools/platform, use --repo=platform.',
+                'Alternative Git repository to clone. Also accepts a gzipped tar archive instead of a Git repository. To use joomlatools/platform, use --repo=platform. For Kodekit Platform, use --repo=kodekit-platform.',
                 $this->repository
             );
     }
@@ -68,26 +78,48 @@ class Versions extends Command
             $chunks = array_chunk($versions, 4);
             $header = $ref === 'heads' ? "Branches" : "Releases";
 
-            $this->getHelperSet()->get('table')
-                ->setHeaders(array($header))
+            $table = new Table($output);
+
+            $table->setHeaders(array($header))
                 ->setRows($chunks)
-                ->setLayout(TableHelper::LAYOUT_COMPACT)
+                ->setStyle('compact')
                 ->render($output);
         }
     }
 
     public function setRepository($repository)
     {
-        if ($repository == 'platform') {
-            $repository = 'git@github.com:joomlatools/joomlatools-platform.git';
+        switch ($repository)
+        {
+            case 'platform':
+                $repository = Versions::REPO_JOOMLATOOLS_PLATFORM;
+                break;
+            case 'kodekit-platform':
+                $repository = Versions::REPO_KODEKIT_PLATFORM;
+                break;
         }
 
         $this->repository = $repository;
+
+        self::$file = Util::getWritablePath() . '/cache/' . md5($this->repository) . '/.versions';
     }
 
     public function getRepository()
     {
         return $this->repository;
+    }
+
+    /**
+     * Check if the repository is a valid Git repository.
+     *
+     * @return bool
+     */
+    public function isGitRepository()
+    {
+        $cmd = "GIT_SSH_COMMAND=\"ssh -oBatchMode=yes\" GIT_ASKPASS=/bin/echo git ls-remote $this->repository 2>&1";
+        exec($cmd, $output, $returnVal);
+
+        return $returnVal === 0;
     }
 
     public function getCacheDirectory()
@@ -115,19 +147,20 @@ class Versions extends Command
 
     public function refresh()
     {
-        if(file_exists($this->getVersionsFile())) {
-            unlink($this->getVersionsFile());
+        if (file_exists(self::$file)) {
+            unlink(self::$file);
         }
 
-        $cmd = "git ls-remote $this->repository | grep -E 'refs/(tags|heads)' | grep -v '{}'";
+        $cmd = "GIT_SSH_COMMAND=\"ssh -oBatchMode=yes\" GIT_ASKPASS=/bin/echo git ls-remote $this->repository 2>&1 | grep -E 'refs/(tags|heads)' | grep -v '{}'";
         exec($cmd, $refs, $returnVal);
 
         if ($returnVal != 0) {
-            throw new \RuntimeException(sprintf('Failed to connect to repository %s. Check the repository URL and your internet connection and try again.', $this->repository));
+            $refs = array();
         }
 
-        $versions = array();
+        $versions = array('tags' => array(), 'heads' => array());
         $pattern  = '/^[a-z0-9]+\s+refs\/(heads|tags)\/([a-z0-9\.\-_\/]+)$/im';
+
         foreach($refs as $ref)
         {
             if(preg_match($pattern, $ref, $matches))
@@ -155,7 +188,7 @@ class Versions extends Command
 
     protected function _getVersions()
     {
-        if(!file_exists($this->getVersionsFile())) {
+        if (!file_exists(self::$file)) {
             $this->refresh();
         }
 
@@ -175,6 +208,11 @@ class Versions extends Command
     public function getLatestRelease($prefix = null)
     {
         $latest   = '0.0.0';
+
+        if (!$this->isGitRepository()) {
+            return 'current';
+        }
+
         $versions = $this->_getVersions();
 
         if (!isset($versions['tags'])) {

@@ -26,7 +26,7 @@ Installation
      joomla site:create testsite
   ```
 
-   The newly installed site will be available at /var/www/testsite and testsite.dev after that. The default Super User's name and password is set to: `admin` / `admin`.
+   The newly installed site will be available at /var/www/testsite and testsite.test after that. The default Super User's name and password is set to: `admin` / `admin`.
 
    By default, the web server root is set to _/var/www_. You can pass _--www=/my/server/path_ to commands for custom values. You can choose the Joomla version or the sample data to be installed:
 
@@ -40,8 +40,33 @@ Installation
 
 1. Read our [documentation pages](https://www.joomlatools.com/developer/tools/console/) to learn more about using the tool.
 
+## Development
+
+To setup the tool for development:
+
+1. Clone the repository:
+
+```
+git clone git@github.com:joomlatools/joomlatools-console.git
+```
+    
+1. Fetch the dependencies:
+
+```
+composer install
+```
+   
+1. Now you can execute the tool with:
+
+```
+bin/joomla list
+```
+
+1. Happy coding!
+
 ## Requirements
 
+* Git
 * Composer
 * Joomla version 2.5 and up.
 

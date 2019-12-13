@@ -12,8 +12,8 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
-
 use Symfony\Component\Console\Question;
+use Joomlatools\Console\Joomla\Util;
 
 abstract class AbstractSite extends Command
 {
@@ -24,10 +24,14 @@ abstract class AbstractSite extends Command
 
     protected function configure()
     {
+        if (empty(self::$files)) {
+            self::$files = Util::getTemplatePath() . '/bin/.files';
+        }
+
         $this->addArgument(
             'site',
             InputArgument::REQUIRED,
-            'Alphanumeric site name. Also used in the site URL with .dev domain'
+            'Alphanumeric site name. Also used in the site URL with .test domain'
         )->addOption(
             'www',
             null,
@@ -35,6 +39,12 @@ abstract class AbstractSite extends Command
             "Web server root",
             '/var/www'
         )
+        ->addOption(
+            'use-webroot-dir',
+            null,
+            InputOption::VALUE_NONE,
+            "Uses directory specified with --www as the site install dir"
+         )
         ;
     }
 
@@ -42,7 +52,12 @@ abstract class AbstractSite extends Command
     {
         $this->site       = $input->getArgument('site');
         $this->www        = $input->getOption('www');
-        $this->target_dir = $this->www.'/'.$this->site;
+
+        if ($input->getOption('use-webroot-dir')) {
+            $this->target_dir = $this->www;
+        } else {
+            $this->target_dir = $this->www.'/'.$this->site;
+        }
     }
 
     /**

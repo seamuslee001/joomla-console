@@ -30,6 +30,16 @@ class Download extends AbstractSite
      */
     protected $versions;
 
+    /**
+     * @var OutputInterface
+     */
+    protected $output = null;
+
+    /**
+     * @var InputInterface
+     */
+    protected $input = null;
+
     protected function configure()
     {
         parent::configure();
@@ -60,22 +70,36 @@ class Download extends AbstractSite
                 'repo',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'Alternative Git repository to clone. To use joomlatools/platform, use --repo=platform.'
+                'Alternative Git repository to clone. Also accepts a gzipped tar archive instead of a Git repository. To use joomlatools/platform, use --repo=platform. For Kodekit Platform, use --repo=kodekit-platform.'
             )
+            ->addOption(
+                'clone',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'Clone the Git repository instead of creating a copy in the target directory. Use --clone=shallow for a shallow clone or leave empty.',
+                true
+            );
         ;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output)
     {
+        $this->output = $output;
+        $this->input  = $input;
+
         parent::execute($input, $output);
 
         $this->check($input, $output);
 
         $this->versions = $this->getApplication()->get('versions');;
 
-        if ($input->getOption('repo')) {
-            $this->versions->setRepository($input->getOption('repo'));
+        $repo = $input->getOption('repo');
+
+        if (empty($repo)) {
+            $repo = Versions::REPO_JOOMLA_CMS;
         }
+
+        $this->versions->setRepository($repo);
 
         if ($input->getOption('refresh')) {
             $this->versions->refresh();
@@ -87,39 +111,24 @@ class Download extends AbstractSite
 
         $this->setVersion($input->getOption('release'));
 
-        if ($this->version != 'none')
-        {
-            $tarball = $this->_getTarball($output);
+        if (strtolower($this->version) == 'none') {
+            return;
+        }
 
-            if (!$this->_isValidTarball($tarball))
-            {
-                if (file_exists($tarball)) {
-                    unlink($tarball);
-                }
+        if ($input->hasParameterOption('--clone')) {
+            $this->_setupClone();
+        }
+        else $this->_setupCopy();
 
-                throw new \RuntimeException(sprintf('Downloaded tarball "%s" could not be verified. A common cause is an interrupted download: check your internet connection and try again.', basename($tarball)));
-            }
+        $isPlatform = Util::isPlatform($this->target_dir);
 
-            if (!file_exists($this->target_dir)) {
-                `mkdir -p $this->target_dir`;
-            }
+        $directory = $this->target_dir. ($isPlatform ? '/web' : '');
+        if (file_exists($directory.'/htaccess.txt')) {
+            `cp $directory/htaccess.txt $directory/.htaccess`;
+        }
 
-            `cd $this->target_dir; tar xzf $tarball --strip 1`;
-
-            if ($this->versions->isBranch($this->version)) {
-                unlink($tarball);
-            }
-
-            $isPlatform = Util::isPlatform($this->target_dir);
-
-            $directory = $this->target_dir. ($isPlatform ? '/web' : '');
-            if (file_exists($directory.'/htaccess.txt')) {
-                `cp $directory/htaccess.txt $directory/.htaccess`;
-            }
-
-            if ($isPlatform) {
-                `cd $this->target_dir; composer install -q`;
-            }
+        if ($isPlatform || Util::isKodekitPlatform($this->target_dir)) {
+            `cd $this->target_dir; composer --no-interaction install -q`;
         }
     }
 
@@ -132,12 +141,24 @@ class Download extends AbstractSite
 
     public function setVersion($version)
     {
+        if (!$this->versions->isGitRepository())
+        {
+            $this->version = 'current';
+            return;
+        }
+
+        if ($version == 'none')
+        {
+            $this->version = $version;
+            return;
+        }
+
         $result = strtolower($version);
 
         if (strtolower($version) === 'latest') {
             $result = $this->versions->getLatestRelease();
         }
-        elseif ($version != 'none')
+        else
         {
             $length = strlen($version);
             $format = is_numeric($version) || preg_match('/^v?\d(\.\d+)?$/im', $version);
@@ -177,7 +198,40 @@ class Download extends AbstractSite
         $this->version = $result;
     }
 
-    protected function _getTarball(OutputInterface $output)
+    protected function _setupCopy()
+    {
+        $tarball = $this->_getTarball();
+
+        if (!$this->_isValidTarball($tarball))
+        {
+            if (file_exists($tarball)) {
+                unlink($tarball);
+            }
+
+            throw new \RuntimeException(sprintf('Downloaded tar archive "%s" could not be verified. A common cause is an interrupted download: check your internet connection and try again.', basename($tarball)));
+        }
+
+        if (!file_exists($this->target_dir)) {
+            `mkdir -p $this->target_dir`;
+        }
+
+        `cd $this->target_dir; tar xzf $tarball --strip 1`;
+
+        if ($this->versions->isBranch($this->version)) {
+            unlink($tarball);
+        }
+    }
+
+    protected function _setupClone()
+    {
+        if (!$this->versions->isGitRepository()) {
+            throw new \RuntimeException(sprintf('The --clone flag requires a valid Git repository'));
+        }
+
+        $this->_clone($this->target_dir, $this->version);
+    }
+
+    protected function _getTarball()
     {
         $tar   = $this->version.'.tar.gz';
         // Replace forward slashes with a dash, otherwise the path looks like it contains more subdirectories
@@ -185,67 +239,165 @@ class Download extends AbstractSite
 
         $cache = $this->versions->getCacheDirectory().'/'.$tar;
 
-        if (file_exists($cache) && !$this->versions->isBranch($this->version)) {
-            return $cache;
-        }
-
         $repository = $this->versions->getRepository();
 
-        // We can be certain that the joomla-cms repository is a public GitHub repository
-        // so we can download the files straight over HTTP.
-        // We have no clue about anything else, so we clone those locally and fall back on git-archive
-        if ($repository == 'https://github.com/joomla/joomla-cms.git')
+        if ($this->versions->isGitRepository())
         {
-            $output->writeln("<info>Downloading Joomla $this->version - this could take a few minutes...</info>");
+            if (file_exists($cache) && !$this->versions->isBranch($this->version)) {
+                return $cache;
+            }
 
-            $result = $this->_downloadJoomlaCMS($cache);
+            $scheme    = strtolower(parse_url($repository, PHP_URL_SCHEME));
+            $isGitHub  = strtolower(parse_url($repository, PHP_URL_HOST)) == 'github.com';
+            $extension = substr($repository, -4);
 
-            if (!$result) {
-                throw new \RuntimeException(sprintf('Failed to download Joomla %s', $this->version));
+            if (in_array($scheme, array('http', 'https')) && $isGitHub && $extension != '.git') {
+                $result = $this->_downloadFromGitHub($cache);
+            }
+            else
+            {
+                $directory = $this->versions->getCacheDirectory() . '/source';
+
+                if ($this->_clone($directory)) {
+                    $result = $this->_archive($directory, $cache);
+                }
             }
         }
-        else
-        {
-            $clone = $this->versions->getCacheDirectory() . '/source';
-            if (!file_exists($clone))
-            {
-                $output->writeln("<info>Cloning $repository - this could take a few minutes...</info>");
+        else $result = $this->_download($cache);
 
-                `git clone --bare --mirror "$repository" "$clone"`;
-            }
-
-            if ($this->versions->isBranch($this->version))
-            {
-                $output->writeln("<info>Fetching latest changes from $repository - this could take a few minutes...</info>");
-
-                `git --git-dir "$clone" --bare fetch`;
-            }
-
-            `git --git-dir "$clone" archive --prefix=base/ $this->version | gzip >"$cache"`;
+        if (!$result) {
+            throw new \RuntimeException(sprintf('Failed to download source files for Joomla %s', $this->version));
         }
 
         return $cache;
     }
 
     /**
-     * Downloads joomla-cms codebase from github
+     * Downloads codebase from GitHub via HTTP
      *
      * @param $target
      * @return bool
      */
-    protected function _downloadJoomlaCMS($target)
+    protected function _downloadFromGitHub($target)
     {
+		$url = $this->versions->getRepository();
+
         if ($this->versions->isBranch($this->version)) {
-            $url = 'http://github.com/joomla/joomla-cms/tarball/'.$this->version;
+            $url .= '/tarball/' . $this->version;
         }
-        else $url = 'https://github.com/joomla/joomla-cms/archive/'.$this->version.'.tar.gz';
+        else $url .= '/archive/'.$this->version.'.tar.gz';
+
+        $this->output->writeln("<info>Downloading $url - this could take a few minutes ..</info>");
 
         $bytes = file_put_contents($target, fopen($url, 'r'));
-        if ($bytes === false || $bytes == 0) {
-            return false;
+
+        return (bool) $bytes;
+    }
+
+    /**
+     * Downloads codebase via HTTP
+     *
+     * @param $target
+     * @return bool
+     */
+    protected function _download($target)
+    {
+        $url  = $this->versions->getRepository();
+
+        $this->output->writeln("<info>Downloading $url - this could take a few minutes ..</info>");
+
+        $bytes = file_put_contents($target, fopen($url, 'r'));
+
+        return (bool) $bytes;
+    }
+
+    /**
+     * Clone Git repository to $target directory
+     *
+     * @param $target Target directory
+     * @param $tag    Tag or branch to check out
+     * @return bool
+     */
+    protected function _clone($directory, $tag = false)
+    {
+        $repository = $this->versions->getRepository();
+
+        if (!file_exists($directory))
+        {
+            $this->output->writeln("<info>Cloning $repository - this could take a few minutes ..</info>");
+
+            $option = strtolower($this->input->getOption('clone'));
+            $args   = $option == 'shallow' ? '--depth 1' : '';
+
+            if (is_string($tag)) {
+                $args .= sprintf(' --branch %s', escapeshellarg($tag));
+            }
+
+            $command = sprintf("git clone %s --recursive %s %s", $args, escapeshellarg($repository), escapeshellarg($directory));
+
+            exec($command, $result, $exit_code);
+
+            if ($exit_code > 0) {
+                return false;
+            }
         }
 
+        if ($this->versions->isBranch($this->version))
+        {
+            $this->output->writeln("<info>Fetching latest changes from $repository - this could take a few minutes ..</info>");
+
+            exec(sprintf("git --git-dir %s fetch", escapeshellarg("$directory/.git")), $result, $exit_code);
+
+            if ($exit_code > 0) {
+                return false;
+            }
+        }
+        
         return true;
+    }
+
+    /**
+     * Create tarball from cloned Git repository.
+     *
+     * @param $source   Git repository
+     * @param $filename Output filename
+     * @return bool
+     */
+    protected function _archive($source, $filename)
+    {
+        $repository = $this->versions->getRepository();
+
+        $this->output->writeln("<info>Creating $this->version archive for $repository ..</info>");
+
+        if (substr($filename, -3) == '.gz') {
+            $filename = substr($filename, 0, -3);
+        }
+
+        `git --git-dir "$source/.git" archive --prefix=base/ $this->version >"$filename"`;
+
+        // Make sure to include submodules
+        if (file_exists("$source/.gitmodules"))
+        {
+            exec("cd $source && (git submodule foreach) | while read entering path; do echo \$path; done", $result, $return_var);
+
+            if (is_array($result))
+            {
+                foreach ($result as $module)
+                {
+                    $module = trim($module, "'");
+                    $path   = "$source/$module";
+
+                    $cmd = "cd $path && git archive --prefix=base/$module/ HEAD > /tmp/$module.tar && tar --concatenate --file=\"$filename\" /tmp/$module.tar";
+                    exec($cmd);
+
+                    @unlink("/tmp/$module.tar");
+                }
+            }
+        }
+
+        `gzip $filename`;
+
+        return (bool) @filesize("$filename.gz");
     }
 
     /**
@@ -267,7 +419,7 @@ class Download extends AbstractSite
 
         foreach ($commands as $command)
         {
-            exec($command, $output, $returnVal);
+            exec($command, $result, $returnVal);
 
             if ($returnVal != 0) {
                 return false;

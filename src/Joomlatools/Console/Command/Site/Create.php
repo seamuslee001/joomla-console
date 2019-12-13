@@ -44,7 +44,7 @@ To create a site with the latest Joomla version, run:
 
     <info>joomla site:create foobar</info>
 
-The newly installed site will be available at <comment>/var/www/foobar</comment> and <comment>foobar.dev</comment> after that. You can login into your fresh Joomla installation using these credentials: admin/admin.
+The newly installed site will be available at <comment>/var/www/foobar</comment> and <comment>foobar.test</comment> after that. You can login into your fresh Joomla installation using these credentials: admin/admin.
 By default, the web server root is set to <comment>/var/www</comment>. You can pass <comment>–www=/my/server/path</comment> to commands for custom values.
 
 The console can also install the Joomlatools Platform out of the box by adding the <comment>--repo=platform</comment> flag:
@@ -79,7 +79,7 @@ EOF
                 'repo',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'Alternative Git repository to clone. To use joomlatools/platform, use --repo=platform.'
+                'Alternative Git repository to use. Also accepts a gzipped tar archive instead of a Git repository. To use joomlatools/platform, use --repo=platform. For Kodekit Platform, use --repo=kodekit-platform.'
             )
             ->addOption(
                 'clear-cache',
@@ -99,7 +99,7 @@ EOF
                 null,
                 InputOption::VALUE_REQUIRED,
                 'The HTTP port the virtual host should listen to',
-                (Util::isJoomlatoolsBox() ? 8080 : 80)
+                80
             )
             ->addOption(
                 'disable-ssl',
@@ -126,13 +126,32 @@ EOF
                 null,
                 InputOption::VALUE_REQUIRED,
                 'The port on which the server will listen for SSL requests',
-                '443'
+                443
             )
             ->addOption(
                 'interactive',
                 null,
                 InputOption::VALUE_NONE,
                 'Prompt for configuration details'
+            )
+            ->addOption(
+                'options',
+                null,
+                InputOption::VALUE_REQUIRED,
+                "A YAML file consisting of serialized parameters to override JConfig."
+            )
+            ->addOption(
+                'clone',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'Clone the Git repository instead of creating a copy in the target directory. Use --clone=shallow for a shallow clone or leave empty.',
+                true
+            )
+            ->addOption(
+                'skip-create-statement',
+                null,
+                InputOption::VALUE_NONE,
+                'Do not run the "CREATE IF NOT EXISTS <db>" query. Use this if the user does not have CREATE privileges on the database.'
             );
     }
 
@@ -159,7 +178,7 @@ EOF
                 '--www'  => $this->www
             );
 
-            $optionalArgs = array('sample-data', 'symlink', 'projects-dir', 'interactive', 'mysql-login', 'mysql_db_prefix', 'mysql-host', 'mysql-port', 'mysql-database');
+            $optionalArgs = array('sample-data', 'symlink', 'projects-dir', 'interactive', 'mysql-login', 'mysql_db_prefix', 'mysql-db-prefix', 'mysql-host', 'mysql-port', 'mysql-database', 'options', 'skip-create-statement');
             foreach ($optionalArgs as $optionalArg)
             {
                 $value = $input->getOption($optionalArg);
@@ -176,8 +195,12 @@ EOF
 
     public function check(InputInterface $input, OutputInterface $output)
     {
-        if (file_exists($this->target_dir)) {
-            throw new \RuntimeException(sprintf('A site with name %s already exists', $this->site));
+        if (file_exists($this->target_dir) && !is_dir($this->target_dir)) {
+            throw new \RuntimeException(sprintf('A file named \'%s\' already exists', $this->site));
+        }
+
+        if (is_dir($this->target_dir) && count(scandir($this->target_dir)) > 2) {
+            throw new \RuntimeException(sprintf('Site directory \'%s\' is not empty.', $this->site));
         }
     }
 
@@ -186,10 +209,14 @@ EOF
         $arguments = array(
             'site:download',
             'site'          => $this->site,
-            '--release'      => $input->getOption('release'),
+            '--release'     => $input->getOption('release'),
             '--clear-cache' => $input->getOption('clear-cache'),
             '--www'         => $this->www
         );
+
+        if ($input->hasParameterOption('--clone')) {
+            $arguments['--clone'] = $input->getOption('clone');
+        }
 
         $repo = $input->getOption('repo');
         if (!empty($repo)) {
@@ -209,7 +236,8 @@ EOF
             '--disable-ssl' => $input->getOption('disable-ssl'),
             '--ssl-crt'     => $input->getOption('ssl-crt'),
             '--ssl-key'     => $input->getOption('ssl-key'),
-            '--ssl-port'    => $input->getOption('ssl-port')
+            '--ssl-port'    => $input->getOption('ssl-port'),
+            '--www'         => $input->getOption('www')
         ));
 
         $command = $this->getApplication()->get('vhost:create');

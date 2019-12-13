@@ -11,7 +11,7 @@ class Application extends \Symfony\Component\Console\Application
      *
      * @var string
      */
-    const VERSION = '1.4.6';
+    const VERSION = '1.5.3';
 
     /**
      * Application name
@@ -43,16 +43,11 @@ class Application extends \Symfony\Component\Console\Application
     protected $_plugins;
 
     /**
-     * @inherits
-     *
-     * @param string $name
-     * @param string $version
+     * @inheritdoc
      */
     public function __construct($name = 'UNKNOWN', $version = 'UNKNOWN')
     {
         parent::__construct(self::NAME, self::VERSION);
-
-        $this->_plugin_path = realpath(dirname(__FILE__) . '/../../../plugins/');
     }
 
     /**
@@ -80,9 +75,21 @@ class Application extends \Symfony\Component\Console\Application
 
         $this->configureIO($this->_input, $this->_output);
 
+        $this->_setup();
+
         $this->_loadPlugins();
 
         parent::run($this->_input, $this->_output);
+    }
+
+    /**
+     * Get the home directory path
+     *
+     * @return string Path to the Joomlatools Console home directory
+     */
+    public function getConsoleHome()
+    {
+        return rtrim(getenv('HOME'), '/') . '/.joomlatools/console';
     }
 
     /**
@@ -92,9 +99,12 @@ class Application extends \Symfony\Component\Console\Application
      */
     public function getPluginPath()
     {
+        if (empty($this->_plugin_path)) {
+            $this->_plugin_path = $this->getConsoleHome() . '/plugins';
+        }
+
         return $this->_plugin_path;
     }
-
 
     /**
      * Gets the default commands that should always be available.
@@ -135,8 +145,10 @@ class Application extends \Symfony\Component\Console\Application
             new Command\Site\Delete(),
             new Command\Site\Download(),
             new Command\Site\Install(),
+            new Command\Site\Listing(),
             new Command\Site\Token(),
 
+            new Command\Vhost\Alias(),
             new Command\Vhost\Create(),
             new Command\Vhost\Remove(),
 
@@ -155,7 +167,7 @@ class Application extends \Symfony\Component\Console\Application
     {
         if (!$this->_plugins) {
 
-            $manifest = $this->_plugin_path . '/composer.json';
+            $manifest = $this->getPluginPath() . '/composer.json';
 
             if (!file_exists($manifest)) {
                 return array();
@@ -177,7 +189,7 @@ class Application extends \Symfony\Component\Console\Application
 
             foreach ($data->require as $package => $version)
             {
-                $file = $this->_plugin_path . '/vendor/' . $package . '/composer.json';
+                $file = $this->getPluginPath() . '/vendor/' . $package . '/composer.json';
 
                 if (file_exists($file))
                 {
@@ -199,11 +211,40 @@ class Application extends \Symfony\Component\Console\Application
     }
 
     /**
+     * Set up environment
+     */
+    protected function _setup()
+    {
+        if (!file_exists($this->getConsoleHome()))
+        {
+            $result = @mkdir($this->getConsoleHome(), 0775, true);
+
+            if (!$result) {
+                $this->_output->writeln(sprintf('<error>Unable to write to home directory: %s. Please check write permissions.</error>', getenv('HOME')));
+            }
+        }
+
+        // Handle legacy plugin directory
+        if (is_writable($this->getConsoleHome()) && !file_exists($this->getPluginPath()))
+        {
+            $old = realpath(dirname(__FILE__) . '/../../../plugins/');
+
+            if (file_exists($old))
+            {
+                $this->_output->writeln('<comment>Moving legacy plugin directory to ~/.joomlatools-console/plugins.</comment>');
+
+                $cmd = sprintf('mv %s %s', escapeshellarg($old), escapeshellarg($this->getPluginPath()));
+                exec($cmd);
+            }
+        }
+    }
+
+    /**
      * Loads plugins into the application.
      */
     protected function _loadPlugins()
     {
-        $autoloader = $this->_plugin_path . '/vendor/autoload.php';
+        $autoloader = $this->getPluginPath() . '/vendor/autoload.php';
 
         if (file_exists($autoloader)) {
             require_once $autoloader;
@@ -214,7 +255,7 @@ class Application extends \Symfony\Component\Console\Application
         $classes = array();
         foreach ($plugins as $package => $version)
         {
-            $path        = $this->_plugin_path . '/vendor/' . $package;
+            $path        = $this->getPluginPath() . '/vendor/' . $package;
             $directories = glob($path.'/*/Console/Command', GLOB_ONLYDIR);
 
             foreach ($directories as $directory)
